@@ -51,8 +51,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.setupUi(self.MainWindow)  # Designer UI file.
         self.updating_thread = qcore.QThread()
         self.worker = None  # This is a pain and I can't be bothered to learn how it works right now.
-        self.downloadStatusLog = StatusLog(self.tdownloadLog)
-        self.downloadStatusLog.default_duration = 5000
+        self.downloadStatusLog = StatusLog(self.tdownloadLog, fade_enable=False)
         #self.thread_modify_table.started.connect(self.disable_update_buttons)
         #self.thread_modify_table.finished.connect(self.enable_update_buttons)
 
@@ -257,11 +256,12 @@ class StatusLog:
     """
     message_list = []  # See add_message
 
-    def __init__(self, label):
+    def __init__(self, label, fade_enable=True, background_color="FFFFFF", default_duration=5):
         self.label = label
         self.last_time = time.time()
-        self.default_duration = 5
-        self.background_colour = "FFFFFF"
+        self.default_duration = default_duration
+        self.background_colour = background_color
+        self.fade_enable = fade_enable
 
     def update(self):
         t = time.time()
@@ -274,12 +274,17 @@ class StatusLog:
         self.message_list = [x for x in self.message_list if x["duration"] > 0]  # Clear list of "dead" entries.
         # Fade text, add text to the label_content
         for m in self.message_list:
-            if m["duration"] < fade_threshold:
-                message_color = color_lerp(m["color"], self.background_colour, m["duration"] / fade_threshold)
+            if self.fade_enable:
+                if m["duration"] < fade_threshold:
+                    message_color = color_lerp(m["color"], self.background_colour, m["duration"] / fade_threshold)
+                else:
+                    message_color = m["color"]
+                label_content += f"<p><span style=\"color:#{message_color};\">{m['message']}</p>"
+                m["duration"] -= delta_time
             else:
                 message_color = m["color"]
-            label_content += f"<p><span style=\"color:#{message_color};\">{m['message']}</p>"
-            m["duration"] -= delta_time
+                label_content += f"<p><span style=\"color:#{message_color};\">{m['message']}</p>"
+
         label_content += "</body></html>"
         self.label.setText(label_content)
 
