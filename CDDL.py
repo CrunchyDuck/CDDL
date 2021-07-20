@@ -1,7 +1,6 @@
 import subprocess
 import re
 import logging
-import os
 import importlib
 import PyQt5.QtWidgets as wid
 import PyQt5.QtCore as qcore
@@ -9,10 +8,12 @@ import PyQt5.QtGui as qgui
 import sys
 import requests
 from webbrowser import open as web_open
+import time
 
-os.system("venv\\Scripts\\pyuic5.exe ui.ui -o designer_ui.py")  # Update UI file.
+out = subprocess.run(["venv\\Scripts\\pyuic5.exe", 'ui.ui', '-o', 'designer_ui.py'], capture_output=True, text=True)
 import designer_ui
 import pytube
+from pytube import exceptions as pt_exceptions
 
 logging.basicConfig(filename="log.txt", filemode="w", format="[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y/%m/%d %I:%M:%S %p")
 
@@ -44,27 +45,46 @@ def get_module_version_data(module_name):
     return [all_versions, last_version, current_version, up_to_date]
 
 
-class YTDL_ui(designer_ui.Ui_MainWindow):
+class CDDL_ui(designer_ui.Ui_MainWindow):
     def __init__(self, window):
         self.MainWindow = window  # Used for a few things.
         self.setupUi(self.MainWindow)  # Designer UI file.
         self.updating_thread = qcore.QThread()
         self.worker = None  # This is a pain and I can't be bothered to learn how it works right now.
+        self.downloadStatusLog = StatusLog(self.tdownloadLog)
+        self.downloadStatusLog.default_duration = 5000
         #self.thread_modify_table.started.connect(self.disable_update_buttons)
         #self.thread_modify_table.finished.connect(self.enable_update_buttons)
 
         with open("current_version.txt", "r") as f:
             self.tytdlVersion.setText(f.read())
 
-        self.MainWindow.setWindowTitle("YTDL")
+        self.MainWindow.setWindowTitle("CDDL")
         self.MainWindow.setWindowIcon(qgui.QIcon("images/window_icon.png"))  # Window icon
+
+        self.idownloadConvert.addItems([".mp3", ".flac", ".wav", ".mp4"])
 
         # Assign buttons
         self.brefreshVersions.clicked.connect(self.refresh_versions)
         self.bupdatePytube.clicked.connect(self.update_pytube)
         self.bopenGit.clicked.connect(self.open_github)
+        self.bdownloadURL.clicked.connect(self.download)
+
+        # Run the updateGUI loop
+        self.timer = qcore.QTimer()
+        self.timer.timeout.connect(self.downloadStatusLog.update)
+        self.timer.start(34)  # about 30 fps ish. QTimer is quite inaccurate though.
 
         self.refresh_versions()
+
+    # ====== Buttons ====== #
+    def update_buttons_enable(self):
+        self.bupdatePytube.setEnabled(True)
+        self.brefreshVersions.setEnabled(True)
+
+    def update_buttons_disable(self):
+        self.bupdatePytube.setEnabled(False)
+        self.brefreshVersions.setEnabled(False)
 
     def refresh_versions(self):
         self.update_buttons_disable()
@@ -94,9 +114,9 @@ class YTDL_ui(designer_ui.Ui_MainWindow):
     def update_pytube(self):
         target_version = self.tversionList.currentText()
         self.update_buttons_disable()
-        self.tcurrentVersion.setText("Fetching...")
+        self.tcurrentVersion.setText("Updating...")
         self.tpytubeStatus.setStyleSheet("")
-        self.tpytubeStatus.setText("Fetching...")
+        self.tpytubeStatus.setText("Updating...")
 
         self.worker = self.UpdatePytubeWorker(target_version)
         t = self.updating_thread
@@ -107,22 +127,60 @@ class YTDL_ui(designer_ui.Ui_MainWindow):
         w.version.connect(self.update_pytube_version_info)
         w.finished.connect(t.quit)
         w.finished.connect(w.deleteLater)
-        w.finished.connect(lambda: importlib.reload(pytube))  # This should work.
+        w.finished.connect(lambda: importlib.reload(pytube))  # This might not work.
         w.finished.connect(self.update_buttons_enable)
 
         t.start()
 
-    def update_buttons_enable(self):
-        self.bupdatePytube.setEnabled(True)
-        self.brefreshVersions.setEnabled(True)
-
-    def update_buttons_disable(self):
-        self.bupdatePytube.setEnabled(False)
-        self.brefreshVersions.setEnabled(False)
-
     def open_github(self):
         web_open("https://github.com/CrunchyDuck/YTDL/releases/latest")
 
+    def download(self):
+        """Triggered when the download button is pressed."""
+        # Checks
+        if self.bdownloadModePlaylist.isEnabled():
+            mode = "playlist"
+        elif self.bdownloadModeVideo.isEnabled():
+            mode = "video"
+        else:
+            logging.error("Download mode not found.")
+            self.downloadStatusLog.add_message("Download mode not recognized. This is a big problem! Tell me it happened.")
+            return
+
+        target_url = self.idownloadURL.text()
+        if mode == "video":
+            self.download_video(target_url)
+        else:  # Playlist
+            try:
+                # list=PLeSM-rQ-jVpulMI3sas4GE6Xh2XH4pwqD
+                re.search(r"(?:list=)([0-9A-Za-z_-]{34})", target_url).group(1)
+            except AttributeError:
+                logging.warning(f"Could not find playlist URL in {target_url}")
+                self.downloadStatusLog.add_message(f"Could not find playlist URL in {target_url}"
+                                                   f"\nI'm doing this weirdly, so definitely let me know if this persists.")
+                return
+        # Is output path valid?
+        # Is convert format valid?
+
+    def download_video(self, url):
+        """Handles actually downloading the video."""
+        # Load youtube object
+        try:
+            YouTubeObj = pytube.YouTube(url)
+        except pt_exceptions.RegexMatchError:
+            self.downloadStatusLog.add_message(f"Could not find url in {url}")
+            logging.warning(f"Could not find url in {url}")
+            return
+        except pt_exceptions.VideoPrivate:
+            self.downloadStatusLog.add_message(f"Video is private: {url}")
+            return
+        except Exception as e:
+            self.downloadStatusLog.add_message("Error ")
+            print(f"Unknown error fetching {url}\n{e}")
+            traceback.print_exc()
+            return
+
+    # ====== General functions ====== #
     def update_git_version_info(self, version):
         self.tytdlLatest.setText(version)
         if version == "Unknown":
@@ -151,6 +209,7 @@ class YTDL_ui(designer_ui.Ui_MainWindow):
             self.tpytubeStatus.setText("Up to date")
             self.tpytubeStatus.setStyleSheet("color:green")
 
+    # ====== Workers ====== #
     class UpdateCheckWorker(qcore.QObject):
         """Checks for updates in PyTube/GitHub"""
         finished = qcore.pyqtSignal()
@@ -188,6 +247,92 @@ class YTDL_ui(designer_ui.Ui_MainWindow):
             self.finished.emit()
 
 
+class StatusLog:
+    """
+    Displays messages in a given text box for a given amount of time.
+
+    Properties:
+        label - The text box to display information in.
+        last_time - Used for delta-time calculations
+    """
+    message_list = []  # See add_message
+
+    def __init__(self, label):
+        self.label = label
+        self.last_time = time.time()
+        self.default_duration = 5
+        self.background_colour = "FFFFFF"
+
+    def update(self):
+        t = time.time()
+        delta_time = (t - self.last_time) * 1000
+        self.last_time = t
+        fade_threshold = 500  # Point at which text starts to fade out.
+        scroll_before = self.label.verticalScrollBar().value()  # Where the scroll bar is right now.
+
+        label_content = "<html><head/><body>"
+        self.message_list = [x for x in self.message_list if x["duration"] > 0]  # Clear list of "dead" entries.
+        # Fade text, add text to the label_content
+        for m in self.message_list:
+            if m["duration"] < fade_threshold:
+                message_color = color_lerp(m["color"], self.background_colour, m["duration"] / fade_threshold)
+            else:
+                message_color = m["color"]
+            label_content += f"<p><span style=\"color:#{message_color};\">{m['message']}</p>"
+            m["duration"] -= delta_time
+        label_content += "</body></html>"
+        self.label.setText(label_content)
+
+        # If this isn't done, scroll will be set to the top constantly.
+        self.label.verticalScrollBar().setValue(scroll_before)
+
+    def add_message(self, message, duration=-1, color="000000"):
+        """Add a message to the text box.
+
+        Arguments:
+            message - The message to add.
+            duration - How long to display the message for
+            color - The color of the text. Returned to fade the text out.
+        """
+        if duration == -1:
+            duration = self.default_duration
+        self.message_list.append({"message": message, "duration": duration, "color": color})
+
+
+def color_lerp(color1, color2, t):
+    """A very basic linear interp between two colours.
+    Color values should be hex string.
+
+    Arguments:
+        color1 - from
+        color2 - to
+        t - percent between
+
+    Return: Hex string formatted as "FFF00FF"
+    """
+    # Convert from hex string to int.
+    color1 = int(color1, 16)
+    color2 = int(color2, 16)
+
+    # Create a list of R, G and B with bitwise and.
+    colors1 = [(color1 & 0xFF0000) >> 16, (color1 & 0x00FF00) >> 8, color1 & 0x0000FF]
+    colors2 = [(color2 & 0xFF0000) >> 16, (color2 & 0x00FF00) >> 8, color2 & 0x0000FF]
+
+    # Linear interpolation of R G and B
+    new_color = ""  # Hex value of new colour.
+    for c1, c2 in zip(colors1, colors2):
+        new_color += pad_hex(round(c2 + (c1 - c2) * t))
+
+    return new_color
+
+
+def pad_hex(number, size=2):
+    """Pads and strips a hex value, E.G:
+    0xF -> 0F"""
+    h = hex(number)[2:]
+    return ("0" * (size - len(h))) + h
+
+
 def exception_hook(exctype, value, traceback):
     print(exctype, value, traceback)
     sys._excepthook(exctype, value, traceback)
@@ -195,6 +340,13 @@ def exception_hook(exctype, value, traceback):
 
 
 if __name__ == "__main__":
+    # NOTE: Naming scheme.
+    # GUI objects are given a prefix based on their function.
+    # t - General, non-editable text
+    # i - Input field/editable text
+    # b - Button
+    # w - Widget/container
+
     sys._excepthook = sys.excepthook
     sys.excepthook = exception_hook
 
@@ -202,7 +354,7 @@ if __name__ == "__main__":
 
     app = wid.QApplication([])
     window = wid.QMainWindow()
-    s = YTDL_ui(window)  # Creates the SLS window.
+    s = CDDL_ui(window)  # Creates the SLS window.
     window.show()
     try:
         app.exec()
