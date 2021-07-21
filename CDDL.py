@@ -11,6 +11,7 @@ from webbrowser import open as web_open
 import time
 import os
 from pathlib import Path
+import traceback
 
 out = subprocess.run(["venv\\Scripts\\pyuic5.exe", 'ui.ui', '-o', 'designer_ui.py'], capture_output=True, text=True)
 import designer_ui
@@ -70,6 +71,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.bupdatePytube.clicked.connect(self.update_pytube)
         self.bopenGit.clicked.connect(self.open_github)
         self.bdownloadURL.clicked.connect(self.download)
+        self.boutputPath.clicked.connect(self.output_path_explorer)
 
         # Run the updateGUI loop
         self.timer = qcore.QTimer()
@@ -164,7 +166,15 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
         t.start()
 
-
+    def output_path_explorer(self):
+        """Opens up an explorer, allows user to select the Starbound folder."""
+        explorer = wid.QFileDialog()
+        explorer.setFileMode(wid.QFileDialog.DirectoryOnly)
+        cur_dir = self.ioutputPath.text()
+        # explorer.setDirectoryUrl(QUrl(cur_dir if cur_dir else "."))  # FIXME: This doesn't work properly.
+        if explorer.exec():
+            path = explorer.selectedFiles()[0]
+            self.ioutputPath.setText(path)
 
     # ====== General functions ====== #
     def update_git_version_info(self, version):
@@ -210,7 +220,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 status_code = x.status_code
                 self.git_version.emit(x.json()[0]["tag_name"])
             except Exception as e:
-                logging.error(f"Could not get latest github version.\nStatus code: {status_code}\nException: {e}")
+                logging.error(f"Could not get latest github version.\nStatus code: {status_code}\nException: {traceback.format_exc()}")
                 self.git_version.emit("Unknown")
 
             # PyTube version.
@@ -247,73 +257,85 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         def run(self):
             target_url = self.url
             if self.mode == "video":
-                self.download_video(target_url)
+                for i in range(5):
+                    final_attempt = True if i == 4 else False
+                    worked = self.download_video(target_url, final_attempt)
+                    if worked:
+                        break
+                    self.log.add_message("Failed, retrying...")
             else:  # Playlist
                 try:
-                    # list=PLeSM-rQ-jVpulMI3sas4GE6Xh2XH4pwqD
-                    re.search(r"(?:list=)([0-9A-Za-z_-]{34})", target_url).group(1)
-                except AttributeError:
-                    logging.warning(f"Could not find playlist URL in {target_url}")
-                    self.downloadStatusLog.add_message(f"Could not find playlist URL in {target_url}"
-                                                       f"\nI'm doing this weirdly, so definitely let me know if this persists.")
+                    playlist = pytube.Playlist(target_url)
+                    i = 1
+                    num_in_playlist = len(playlist.video_urls)
+                    for i in range(num_in_playlist):
+                        pl_num = f"000{i + 1} "[-4:]
+                        for j in range(5):
+                            final_attempt = True if i == 4 else False
+                            worked = self.download_video(playlist.video_urls[i], final_attempt)
+                            if worked:
+                                break
+                            self.log.add_message("Failed, retrying...")
+                except Exception as e:
+                    logging.warning(f"Error downloading playlist: {target_url}\n{traceback.format_exc()}")
+                    self.log.add_message(f"Unknown error downloading playlist. Details in log.txt.")
                     return
             # Is output path valid?
             # Is convert format valid?
             self.finished.emit()
 
-        def download_video(self, url):
-            """Handles actually downloading the video."""
+        def download_video(self, url, final_attempt=False):
+            """Handles actually downloading the video.
+            If final_attempt is false, don't log errors.
+            """
             # Load youtube object
             try:
                 YouTubeObj = pytube.YouTube(url)
-                file_name = YouTubeObj.title
-                file_directory = self.output_path
-                self.log.add_message(f"Downloading {YouTubeObj.title}...")
             except pt_exceptions.RegexMatchError:
-                self.downloadStatusLog.add_message(f"Could not find url in {url}")
-                logging.warning(f"Could not find url in {url}")
+                if final_attempt:
+                    logging.warning(f"Could not find url in {url}")
+                self.log.add_message(f"Could not find url in {url}")
                 return
             except pt_exceptions.VideoPrivate:
-                self.downloadStatusLog.add_message(f"Video is private: {url}")
+                if final_attempt:
+                    self.log.add_message(f"Video is private: {url}")
                 return
             except Exception as e:
-                self.downloadStatusLog.add_message(f"Error finding {url}, skipping...")
-                logging.error(f"Unknown error fetching {url}\n{e}")
+                if final_attempt:
+                    logging.error(f"Unknown error fetching {url}\n{traceback.format_exc()}")
+                self.log.add_message(f"Error finding {url}, skipping...")
                 return
 
-            # TODO: Implement converting.
             try:
+                file_name = YouTubeObj.title + self.convert_to
+                file_directory = self.output_path
+                output_path = f"{file_directory}\\{file_name}.{self.convert_to}"
+                self.log.add_message(f"Downloading {YouTubeObj.title}...")
+
                 audio = YouTubeObj.streams.order_by("abr")[-1]
-                audio_path = audio.download(output_path=self.output_path)
+                audio_path = audio.download(output_path=self.output_path, filename="cddl_audio")
                 self.log.add_message("Downloaded audio")
                 if not self.audio_only:
                     video = YouTubeObj.streams.order_by("resolution")[-1]
-                    video_path = video.download(output_path=self.output_path)
+                    video_path = video.download(output_path=self.output_path, filename="cddl_video")
                     self.log.add_message("Downloaded video")
 
-                    if self.convert_to != "":
-                        suffix = self.convert_to
-                    else:
-                        suffix = str(Path(video_path).suffix)
-
-                    output_path = file_directory + file_name + suffix
                     subprocess.run(["ffmpeg", '-i', video_path, "-i", audio_path, "-c", "copy", output_path], capture_output=True, text=True, input="y")
-                    logging.info(f"Downloaded {video.default_filename}")
-                    self.log.add_message(f"Downloaded {video.default_filename}")
+                    logging.info(f"Downloaded {file_name}")
+                    self.log.add_message(f"Downloaded {file_name}")
+
                     os.remove(audio_path)
                     os.remove(video_path)
                 else:
-                    if self.convert_to != "":
-                        suffix = self.convert_to
-                        output_path = file_directory + file_name + suffix
-                        subprocess.run(["ffmpeg", "-i", audio_path, output_path], capture_output=True, text=True, input="y")
-                    self.log.add_message(f"Downloaded {audio.default_filename}")
-
+                    subprocess.run(["ffmpeg", "-i", audio_path, output_path], capture_output=True, text=True, input="y")
+                    self.log.add_message(f"Downloaded {file_name}")
                     os.remove(audio_path)
             except Exception as e:
-                logging.error(f"Could not download {url}.\n{e}")
-                self.log.add_message(f"Unknown error downloading {url}, details in log.txt")
+                if final_attempt:
+                    self.log.add_message(f"Unknown error downloading {url}, details in log.txt")
+                logging.error(f"Could not download {url}.\n{traceback.format_exc()}")
                 return
+            return True
 
 
 class StatusLog:
@@ -339,6 +361,7 @@ class StatusLog:
         self.last_time = t
         fade_threshold = 500  # Point at which text starts to fade out.
         scroll_before = self.label.verticalScrollBar().value()  # Where the scroll bar is right now.
+        # text_cursor = self.label.textCursor().position()  # TODO: Make text reselect.
         # TODO: Make it auto scroll if at the bottom of the scroll bar.
 
         label_content = "<html><head/><body>"
@@ -361,6 +384,7 @@ class StatusLog:
 
         # If this isn't done, scroll will be set to the top constantly.
         self.label.verticalScrollBar().setValue(scroll_before)
+        #self.label.setTextCursor(text_cursor)
 
     def add_message(self, message, duration=-1, color="000000"):
         """Add a message to the text box.
@@ -435,4 +459,4 @@ if __name__ == "__main__":
     try:
         app.exec()
     except Exception as e:
-        logging.critical(f"Program closed. Exception: {e}")
+        logging.critical(f"Program closed. Exception: {traceback.format_exc()}")
