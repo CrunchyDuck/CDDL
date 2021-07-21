@@ -395,7 +395,7 @@
       </widget>
       <widget class="QWidget" name="wtabDownload">
        <attribute name="title">
-        <string>Donwload</string>
+        <string>Download</string>
        </attribute>
        <layout class="QVBoxLayout" name="verticalLayout_6">
         <item>
@@ -431,8 +431,7 @@
                  </size>
                 </property>
                 <property name="toolTip">
-                 <string>The URL of the video/playlist.
-You can also just provide the ID, E.G v=HQC9sToSdmM</string>
+                 <string>The URL of the video/playlist.</string>
                 </property>
                 <property name="text">
                  <string>YouTube URL:</string>
@@ -445,8 +444,7 @@ You can also just provide the ID, E.G v=HQC9sToSdmM</string>
               <item>
                <widget class="QLineEdit" name="idownloadURL">
                 <property name="toolTip">
-                 <string>The URL of the video/playlist.
-You can also just provide the ID, E.G v=HQC9sToSdmM</string>
+                 <string>The URL of the video/playlist.</string>
                 </property>
                 <property name="text">
                  <string>https://www.youtube.com/watch?v=HQC9sToSdmM</string>
@@ -494,8 +492,7 @@ Playlist: Download a whole playlist.</string>
               <item>
                <widget class="QRadioButton" name="bdownloadModePlaylist">
                 <property name="toolTip">
-                 <string>Video: Download a single video
-Playlist: Download a whole playlist.</string>
+                 <string>Download a whole playlist.</string>
                 </property>
                 <property name="text">
                  <string>Playlist</string>
@@ -508,8 +505,7 @@ Playlist: Download a whole playlist.</string>
               <item>
                <widget class="QRadioButton" name="bdownloadModeVideo">
                 <property name="toolTip">
-                 <string>Video: Download a single video
-Playlist: Download a whole playlist.</string>
+                 <string>Download a single video</string>
                 </property>
                 <property name="text">
                  <string>Video</string>
@@ -582,6 +578,9 @@ Playlist: Download a whole playlist.</string>
                   <pointsize>12</pointsize>
                  </font>
                 </property>
+                <property name="toolTip">
+                 <string>Open up a file browser</string>
+                </property>
                 <property name="text">
                  <string>...</string>
                 </property>
@@ -643,6 +642,17 @@ Type in your own valid audio/video format, or use one of the presets.</string>
                 </property>
                </widget>
               </item>
+              <item>
+               <widget class="QCheckBox" name="iaudioOnly">
+                <property name="toolTip">
+                 <string>Download only the audio of the URL.
+It will download and convert much faster</string>
+                </property>
+                <property name="text">
+                 <string>Audio Only</string>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </item>
@@ -660,6 +670,9 @@ Type in your own valid audio/video format, or use one of the presets.</string>
                <weight>75</weight>
                <bold>true</bold>
               </font>
+             </property>
+             <property name="toolTip">
+              <string>Download with given settings!</string>
              </property>
              <property name="text">
               <string>Download</string>

@@ -9,6 +9,8 @@ import sys
 import requests
 from webbrowser import open as web_open
 import time
+import os
+from pathlib import Path
 
 out = subprocess.run(["venv\\Scripts\\pyuic5.exe", 'ui.ui', '-o', 'designer_ui.py'], capture_output=True, text=True)
 import designer_ui
@@ -80,10 +82,12 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
     def update_buttons_enable(self):
         self.bupdatePytube.setEnabled(True)
         self.brefreshVersions.setEnabled(True)
+        self.bdownloadURL.setEnabled(True)
 
     def update_buttons_disable(self):
         self.bupdatePytube.setEnabled(False)
         self.brefreshVersions.setEnabled(False)
+        self.bdownloadURL.setEnabled(False)
 
     def refresh_versions(self):
         self.update_buttons_disable()
@@ -136,48 +140,31 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
     def download(self):
         """Triggered when the download button is pressed."""
-        # Checks
-        if self.bdownloadModePlaylist.isEnabled():
+        if self.bdownloadModePlaylist.isChecked():
             mode = "playlist"
-        elif self.bdownloadModeVideo.isEnabled():
+        elif self.bdownloadModeVideo.isChecked():
             mode = "video"
         else:
             logging.error("Download mode not found.")
-            self.downloadStatusLog.add_message("Download mode not recognized. This is a big problem! Tell me it happened.")
+            self.downloadStatusLog.add_message(
+                "Download mode not recognized. This is a big problem! Tell me it happened.")
             return
 
-        target_url = self.idownloadURL.text()
-        if mode == "video":
-            self.download_video(target_url)
-        else:  # Playlist
-            try:
-                # list=PLeSM-rQ-jVpulMI3sas4GE6Xh2XH4pwqD
-                re.search(r"(?:list=)([0-9A-Za-z_-]{34})", target_url).group(1)
-            except AttributeError:
-                logging.warning(f"Could not find playlist URL in {target_url}")
-                self.downloadStatusLog.add_message(f"Could not find playlist URL in {target_url}"
-                                                   f"\nI'm doing this weirdly, so definitely let me know if this persists.")
-                return
-        # Is output path valid?
-        # Is convert format valid?
+        self.update_buttons_disable()
+        self.worker = self.DownloadWorker(self.downloadStatusLog, self.idownloadURL.text(), self.iaudioOnly.isChecked(),
+                                          self.ioutputPath.text(), self.idownloadConvert.currentText(), mode)
+        t = self.updating_thread
+        w = self.worker
 
-    def download_video(self, url):
-        """Handles actually downloading the video."""
-        # Load youtube object
-        try:
-            YouTubeObj = pytube.YouTube(url)
-        except pt_exceptions.RegexMatchError:
-            self.downloadStatusLog.add_message(f"Could not find url in {url}")
-            logging.warning(f"Could not find url in {url}")
-            return
-        except pt_exceptions.VideoPrivate:
-            self.downloadStatusLog.add_message(f"Video is private: {url}")
-            return
-        except Exception as e:
-            self.downloadStatusLog.add_message("Error ")
-            print(f"Unknown error fetching {url}\n{e}")
-            traceback.print_exc()
-            return
+        w.moveToThread(t)
+        t.started.connect(w.run)
+        w.finished.connect(t.quit)
+        w.finished.connect(w.deleteLater)
+        w.finished.connect(self.update_buttons_enable)
+
+        t.start()
+
+
 
     # ====== General functions ====== #
     def update_git_version_info(self, version):
@@ -245,6 +232,89 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             self.version.emit(self.target_version)
             self.finished.emit()
 
+    class DownloadWorker(qcore.QObject):
+        finished = qcore.pyqtSignal()
+
+        def __init__(self, output_log, url, audio_only, output_path, convert_to, mode):
+            super().__init__()
+            self.log = output_log
+            self.url = url
+            self.audio_only = audio_only
+            self.output_path = output_path
+            self.convert_to = convert_to
+            self.mode = mode
+
+        def run(self):
+            target_url = self.url
+            if self.mode == "video":
+                self.download_video(target_url)
+            else:  # Playlist
+                try:
+                    # list=PLeSM-rQ-jVpulMI3sas4GE6Xh2XH4pwqD
+                    re.search(r"(?:list=)([0-9A-Za-z_-]{34})", target_url).group(1)
+                except AttributeError:
+                    logging.warning(f"Could not find playlist URL in {target_url}")
+                    self.downloadStatusLog.add_message(f"Could not find playlist URL in {target_url}"
+                                                       f"\nI'm doing this weirdly, so definitely let me know if this persists.")
+                    return
+            # Is output path valid?
+            # Is convert format valid?
+            self.finished.emit()
+
+        def download_video(self, url):
+            """Handles actually downloading the video."""
+            # Load youtube object
+            try:
+                YouTubeObj = pytube.YouTube(url)
+                file_name = YouTubeObj.title
+                file_directory = self.output_path
+                self.log.add_message(f"Downloading {YouTubeObj.title}...")
+            except pt_exceptions.RegexMatchError:
+                self.downloadStatusLog.add_message(f"Could not find url in {url}")
+                logging.warning(f"Could not find url in {url}")
+                return
+            except pt_exceptions.VideoPrivate:
+                self.downloadStatusLog.add_message(f"Video is private: {url}")
+                return
+            except Exception as e:
+                self.downloadStatusLog.add_message(f"Error finding {url}, skipping...")
+                logging.error(f"Unknown error fetching {url}\n{e}")
+                return
+
+            # TODO: Implement converting.
+            try:
+                audio = YouTubeObj.streams.order_by("abr")[-1]
+                audio_path = audio.download(output_path=self.output_path)
+                self.log.add_message("Downloaded audio")
+                if not self.audio_only:
+                    video = YouTubeObj.streams.order_by("resolution")[-1]
+                    video_path = video.download(output_path=self.output_path)
+                    self.log.add_message("Downloaded video")
+
+                    if self.convert_to != "":
+                        suffix = self.convert_to
+                    else:
+                        suffix = str(Path(video_path).suffix)
+
+                    output_path = file_directory + file_name + suffix
+                    subprocess.run(["ffmpeg", '-i', video_path, "-i", audio_path, "-c", "copy", output_path], capture_output=True, text=True, input="y")
+                    logging.info(f"Downloaded {video.default_filename}")
+                    self.log.add_message(f"Downloaded {video.default_filename}")
+                    os.remove(audio_path)
+                    os.remove(video_path)
+                else:
+                    if self.convert_to != "":
+                        suffix = self.convert_to
+                        output_path = file_directory + file_name + suffix
+                        subprocess.run(["ffmpeg", "-i", audio_path, output_path], capture_output=True, text=True, input="y")
+                    self.log.add_message(f"Downloaded {audio.default_filename}")
+
+                    os.remove(audio_path)
+            except Exception as e:
+                logging.error(f"Could not download {url}.\n{e}")
+                self.log.add_message(f"Unknown error downloading {url}, details in log.txt")
+                return
+
 
 class StatusLog:
     """
@@ -269,6 +339,7 @@ class StatusLog:
         self.last_time = t
         fade_threshold = 500  # Point at which text starts to fade out.
         scroll_before = self.label.verticalScrollBar().value()  # Where the scroll bar is right now.
+        # TODO: Make it auto scroll if at the bottom of the scroll bar.
 
         label_content = "<html><head/><body>"
         self.message_list = [x for x in self.message_list if x["duration"] > 0]  # Clear list of "dead" entries.

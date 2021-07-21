@@ -259,6 +259,9 @@ class Ui_MainWindow(object):
         self.idownloadConvert.setEditable(True)
         self.idownloadConvert.setObjectName("idownloadConvert")
         self.horizontalLayout_14.addWidget(self.idownloadConvert)
+        self.iaudioOnly = QtWidgets.QCheckBox(self.wdownloadConvert)
+        self.iaudioOnly.setObjectName("iaudioOnly")
+        self.horizontalLayout_14.addWidget(self.iaudioOnly)
         self.verticalLayout_5.addWidget(self.wdownloadConvert)
         self.bdownloadURL = QtWidgets.QPushButton(self.wdownloadSettings)
         self.bdownloadURL.setMinimumSize(QtCore.QSize(0, 40))
@@ -310,24 +313,21 @@ class Ui_MainWindow(object):
         self.brefreshVersions.setText(_translate("MainWindow", "Refresh"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.wtabUpdates), _translate("MainWindow", "Updates"))
         self.wdownloadSettings.setTitle(_translate("MainWindow", "Settings"))
-        self.tdownloadURL.setToolTip(_translate("MainWindow", "The URL of the video/playlist.\n"
-"You can also just provide the ID, E.G v=HQC9sToSdmM"))
+        self.tdownloadURL.setToolTip(_translate("MainWindow", "The URL of the video/playlist."))
         self.tdownloadURL.setText(_translate("MainWindow", "YouTube URL:"))
-        self.idownloadURL.setToolTip(_translate("MainWindow", "The URL of the video/playlist.\n"
-"You can also just provide the ID, E.G v=HQC9sToSdmM"))
+        self.idownloadURL.setToolTip(_translate("MainWindow", "The URL of the video/playlist."))
         self.idownloadURL.setText(_translate("MainWindow", "https://www.youtube.com/watch?v=HQC9sToSdmM"))
         self.idownloadMode.setToolTip(_translate("MainWindow", "Video: Download a single video\n"
 "Playlist: Download a whole playlist."))
         self.idownloadMode.setText(_translate("MainWindow", "Mode:"))
-        self.bdownloadModePlaylist.setToolTip(_translate("MainWindow", "Video: Download a single video\n"
-"Playlist: Download a whole playlist."))
+        self.bdownloadModePlaylist.setToolTip(_translate("MainWindow", "Download a whole playlist."))
         self.bdownloadModePlaylist.setText(_translate("MainWindow", "Playlist"))
-        self.bdownloadModeVideo.setToolTip(_translate("MainWindow", "Video: Download a single video\n"
-"Playlist: Download a whole playlist."))
+        self.bdownloadModeVideo.setToolTip(_translate("MainWindow", "Download a single video"))
         self.bdownloadModeVideo.setText(_translate("MainWindow", "Video"))
         self.toutputPath.setToolTip(_translate("MainWindow", "Where to save the file"))
         self.toutputPath.setText(_translate("MainWindow", "Output Path:"))
         self.ioutputPath.setToolTip(_translate("MainWindow", "Where to save the file"))
+        self.boutputPath.setToolTip(_translate("MainWindow", "Open up a file browser"))
         self.boutputPath.setText(_translate("MainWindow", "..."))
         self.tdownloadConvert.setToolTip(_translate("MainWindow", "Convert downloaded file to a different format.\n"
 "Leave blank for no conversion.\n"
@@ -338,6 +338,10 @@ class Ui_MainWindow(object):
 "Leave blank for no conversion.\n"
 "\n"
 "Type in your own valid audio/video format, or use one of the presets."))
+        self.iaudioOnly.setToolTip(_translate("MainWindow", "Download only the audio of the URL.\n"
+"It will download and convert much faster"))
+        self.iaudioOnly.setText(_translate("MainWindow", "Audio Only"))
+        self.bdownloadURL.setToolTip(_translate("MainWindow", "Download with given settings!"))
         self.bdownloadURL.setText(_translate("MainWindow", "Download"))
         self.wdownloadLog.setTitle(_translate("MainWindow", "Log"))
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.wtabDownload), _translate("MainWindow", "Donwload"))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.wtabDownload), _translate("MainWindow", "Download"))
