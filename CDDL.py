@@ -12,6 +12,7 @@ import time
 import os
 from pathlib import Path
 import traceback
+import json
 
 out = subprocess.run(["venv\\Scripts\\pyuic5.exe", 'ui.ui', '-o', 'designer_ui.py'], capture_output=True, text=True)
 import designer_ui
@@ -50,13 +51,17 @@ def get_module_version_data(module_name):
 
 class CDDL_ui(designer_ui.Ui_MainWindow):
     def __init__(self, window):
+        try:
+            self.user_settings = json.load(open("user_settings.json", "r"))
+        except FileNotFoundError:
+            self.user_settings = {}
+
         self.MainWindow = window  # Used for a few things.
         self.setupUi(self.MainWindow)  # Designer UI file.
+        # TODO: I accidentally put downloading on the updating thread; I should move it to its own at some point.
         self.updating_thread = qcore.QThread()
         self.worker = None  # This is a pain and I can't be bothered to learn how it works right now.
         self.downloadStatusLog = StatusLog(self.tdownloadLog, fade_enable=False)
-        #self.thread_modify_table.started.connect(self.disable_update_buttons)
-        #self.thread_modify_table.finished.connect(self.enable_update_buttons)
 
         with open("current_version.txt", "r") as f:
             self.tytdlVersion.setText(f.read())
@@ -72,6 +77,27 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.bopenGit.clicked.connect(self.open_github)
         self.bdownloadURL.clicked.connect(self.download)
         self.boutputPath.clicked.connect(self.output_path_explorer)
+        self.bstopDownload.clicked.connect(self.stop_download)
+
+        # Apply default settings
+        self.ioutputPath.setText(self.get_json("download path", ""))
+        self.idownloadConvert.setCurrentText(self.get_json("download format", ".mp3"))
+        self.idownloadURL.setText(self.get_json("download url", ""))
+        self.iaudioOnly.setCheckState(self.get_json("audio only", 0))
+        self.iprefix.setCheckState(self.get_json("prefix", 2))
+        self.set_download_mode()
+
+        # Other signals
+        self.ioutputPath.textChanged.connect(lambda text: self.update_json("download path", str(text)))
+        self.idownloadConvert.currentTextChanged.connect(lambda text: self.update_json("download format", str(text)))
+        self.idownloadURL.textChanged.connect(lambda text: self.update_json("download url", str(text)))
+        self.iaudioOnly.stateChanged.connect(lambda state: self.update_json("audio only", state))
+        self.iprefix.stateChanged.connect(lambda state: self.update_json("prefix", state))
+        self.bdownloadModePlaylist.clicked.connect(self.get_download_mode)
+        self.bdownloadModeVideo.clicked.connect(self.get_download_mode)
+
+        self.updating_thread.started.connect(lambda: self.bstopDownload.setEnabled(True))
+        self.updating_thread.finished.connect(lambda: self.bstopDownload.setEnabled(False))
 
         # Run the updateGUI loop
         self.timer = qcore.QTimer()
@@ -140,21 +166,43 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
     def open_github(self):
         web_open("https://github.com/CrunchyDuck/YTDL/releases/latest")
 
+    def set_download_mode(self):
+        mode = self.get_json("mode", "")
+
+        self.bdownloadModeVideo.setChecked(False)
+        self.bdownloadModePlaylist.setChecked(False)
+
+        if mode == "playlist":
+            self.iprefix.setEnabled(True)
+            self.bdownloadModePlaylist.setChecked(True)
+        else:  # Video
+            self.iprefix.setEnabled(False)
+            self.bdownloadModeVideo.setChecked(True)
+
+    def get_download_mode(self):
+        if self.bdownloadModePlaylist.isChecked():
+            self.update_json("mode", "playlist")
+        elif self.bdownloadModeVideo.isChecked():
+            self.update_json("mode", "video")
+
+        self.set_download_mode()
+
     def download(self):
         """Triggered when the download button is pressed."""
-        if self.bdownloadModePlaylist.isChecked():
-            mode = "playlist"
-        elif self.bdownloadModeVideo.isChecked():
-            mode = "video"
-        else:
+        mode = self.get_json("mode", "")
+        if not mode:
             logging.error("Download mode not found.")
             self.downloadStatusLog.add_message(
                 "Download mode not recognized. This is a big problem! Tell me it happened.")
             return
 
         self.update_buttons_disable()
+        if self.iprefix.isEnabled():
+            prefix = self.get_json("prefix", 2)
+        else:
+            prefix = 0
         self.worker = self.DownloadWorker(self.downloadStatusLog, self.idownloadURL.text(), self.iaudioOnly.isChecked(),
-                                          self.ioutputPath.text(), self.idownloadConvert.currentText(), mode)
+                                          self.ioutputPath.text(), self.idownloadConvert.currentText(), mode, prefix)
         t = self.updating_thread
         w = self.worker
 
@@ -165,6 +213,13 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         w.finished.connect(self.update_buttons_enable)
 
         t.start()
+
+    def stop_download(self):
+        try:
+            self.worker.stop = True
+            self.downloadStatusLog.add_message("Stopping downloads...")
+        except Exception as e:
+            logging.error("Stopping download failed.")
 
     def output_path_explorer(self):
         """Opens up an explorer, allows user to select the Starbound folder."""
@@ -204,6 +259,19 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         else:
             self.tpytubeStatus.setText("Up to date")
             self.tpytubeStatus.setStyleSheet("color:green")
+
+    def save_json(self):
+        json.dump(self.user_settings, open("user_settings.json", "w"))
+
+    def update_json(self, key, value):
+        self.user_settings[key] = value
+        self.save_json()
+
+    def get_json(self, key, default):
+        try:
+            return self.user_settings[key]
+        except KeyError:
+            return default
 
     # ====== Workers ====== #
     class UpdateCheckWorker(qcore.QObject):
@@ -245,7 +313,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
     class DownloadWorker(qcore.QObject):
         finished = qcore.pyqtSignal()
 
-        def __init__(self, output_log, url, audio_only, output_path, convert_to, mode):
+        def __init__(self, output_log, url, audio_only, output_path, convert_to, mode, prefix):
             super().__init__()
             self.log = output_log
             self.url = url
@@ -253,38 +321,52 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             self.output_path = output_path
             self.convert_to = convert_to
             self.mode = mode
+            self.prefix = prefix
+
+            self.stop = False
 
         def run(self):
             target_url = self.url
             if self.mode == "video":
+                self.log.add_message(f"Downloading {self.url}")
                 for i in range(5):
-                    final_attempt = True if i == 4 else False
-                    worked = self.download_video(target_url, final_attempt)
-                    if worked:
+                    if self.stop:
                         break
-                    self.log.add_message("Failed, retrying...")
+                    final_attempt = True if i == 4 else False
+                    worked = self.download_video(target_url, final_attempt=final_attempt)
+                    if worked or self.stop:
+                        break
+                    self.log.append_message("Failed, retrying...")
             else:  # Playlist
                 try:
                     playlist = pytube.Playlist(target_url)
                     i = 1
                     num_in_playlist = len(playlist.video_urls)
-                    for i in range(num_in_playlist):
-                        pl_num = f"000{i + 1} "[-4:]
+                    for x in range(num_in_playlist):
+                        if self.stop: break
+
+                        self.log.add_message(f"Downloading {self.url}")
+
+                        if self.prefix:
+                            pl_num = f"000{i + 1} "[-4:]
+                        else:
+                            pl_num = ""
                         for j in range(5):
+                            if self.stop: break
                             final_attempt = True if i == 4 else False
-                            worked = self.download_video(playlist.video_urls[i], final_attempt)
-                            if worked:
+                            worked = self.download_video(playlist.video_urls[i], pl_num, final_attempt)
+                            if worked or self.stop:
                                 break
-                            self.log.add_message("Failed, retrying...")
+                            self.log.append_message("Failed, retrying...")
                 except Exception as e:
                     logging.warning(f"Error downloading playlist: {target_url}\n{traceback.format_exc()}")
-                    self.log.add_message(f"Unknown error downloading playlist. Details in log.txt.")
+                    self.log.append_message(f"Unknown error downloading playlist. Details in log.txt.")
                     return
             # Is output path valid?
             # Is convert format valid?
             self.finished.emit()
 
-        def download_video(self, url, final_attempt=False):
+        def download_video(self, url, prefix="", final_attempt=False):
             """Handles actually downloading the video.
             If final_attempt is false, don't log errors.
             """
@@ -294,45 +376,52 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             except pt_exceptions.RegexMatchError:
                 if final_attempt:
                     logging.warning(f"Could not find url in {url}")
-                self.log.add_message(f"Could not find url in {url}")
+                self.log.append_message(f"Could not find url in {url}")
                 return
             except pt_exceptions.VideoPrivate:
                 if final_attempt:
-                    self.log.add_message(f"Video is private: {url}")
+                    self.log.append_message(f"Video is private: {url}")
                 return
             except Exception as e:
                 if final_attempt:
                     logging.error(f"Unknown error fetching {url}\n{traceback.format_exc()}")
-                self.log.add_message(f"Error finding {url}, skipping...")
+                self.log.append_message(f"Error finding {url}, skipping...")
                 return
 
             try:
-                file_name = YouTubeObj.title + self.convert_to
+                file_name = prefix + YouTubeObj.title + self.convert_to
+                file_name = "".join(x for x in file_name if x not in "\\/:*?\"<>|")
                 file_directory = self.output_path
-                output_path = f"{file_directory}\\{file_name}.{self.convert_to}"
-                self.log.add_message(f"Downloading {YouTubeObj.title}...")
+                output_path = f"{file_directory}\\{file_name}"
+                if Path(output_path).exists():
+                    self.log.append_message(f"{file_name} already downloaded.")
+                    return True
+
+                self.log.append_message(f"Downloading {YouTubeObj.title}...")
 
                 audio = YouTubeObj.streams.order_by("abr")[-1]
                 audio_path = audio.download(output_path=self.output_path, filename="cddl_audio")
-                self.log.add_message("Downloaded audio")
+                #self.log.append_message("Downloaded audio")
                 if not self.audio_only:
                     video = YouTubeObj.streams.order_by("resolution")[-1]
                     video_path = video.download(output_path=self.output_path, filename="cddl_video")
-                    self.log.add_message("Downloaded video")
+                    #self.log.append_message("Downloaded video")
 
+                    self.log.append_message("Converting...")
                     subprocess.run(["ffmpeg", '-i', video_path, "-i", audio_path, "-c", "copy", output_path], capture_output=True, text=True, input="y")
                     logging.info(f"Downloaded {file_name}")
-                    self.log.add_message(f"Downloaded {file_name}")
+                    self.log.append_message(f"Downloaded {file_name}")
 
                     os.remove(audio_path)
                     os.remove(video_path)
                 else:
+                    self.log.append_message("Converting...")
                     subprocess.run(["ffmpeg", "-i", audio_path, output_path], capture_output=True, text=True, input="y")
-                    self.log.add_message(f"Downloaded {file_name}")
+                    self.log.append_message(f"Downloaded {file_name}")
                     os.remove(audio_path)
             except Exception as e:
                 if final_attempt:
-                    self.log.add_message(f"Unknown error downloading {url}, details in log.txt")
+                    self.log.append_message(f"Unknown error downloading {url}, details in log.txt")
                 logging.error(f"Could not download {url}.\n{traceback.format_exc()}")
                 return
             return True
@@ -346,7 +435,7 @@ class StatusLog:
         label - The text box to display information in.
         last_time - Used for delta-time calculations
     """
-    message_list = []  # See add_message
+    message_list = []
 
     def __init__(self, label, fade_enable=True, background_color="FFFFFF", default_duration=5):
         self.label = label
@@ -397,6 +486,13 @@ class StatusLog:
         if duration == -1:
             duration = self.default_duration
         self.message_list.append({"message": message, "duration": duration, "color": color})
+
+    def append_message(self, message):
+        """Adds the given text to the last message."""
+        if self.message_list:
+            self.message_list[-1]["message"] += f"<br/>{message}"
+        else:
+            self.add_message(message, self.default_duration, "000000")
 
 
 def color_lerp(color1, color2, t):
