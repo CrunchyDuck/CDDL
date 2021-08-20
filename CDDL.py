@@ -28,7 +28,7 @@ def get_module_version_data(module_name):
 
     # This forces an error, and the error returns a list of all of the version of this module.
     # Surely there has to be a better way, but this is what I found online, and it functions.
-    latest_version = subprocess.run([sys.executable, '-m', 'pip', 'install', f'{module_name}==random'], capture_output=True, text=True)
+    latest_version = subprocess.run(['pip', 'install', f'{module_name}==random'], capture_output=True, text=True)
     try:
         # Gets the last version listed in the error.
         all_versions = re.search(r"from versions: (.*?)(?:\))", latest_version.stderr).group(1).split(", ")
@@ -38,7 +38,7 @@ def get_module_version_data(module_name):
         all_versions = []
         last_version = ""
 
-    current_version = subprocess.run([sys.executable, "-m", "pip", "show", f"{module_name}"], capture_output=True, text=True)
+    current_version = subprocess.run(["pip", "show", f"{module_name}"], capture_output=True, text=True)
     try:
         current_version = re.search(r"Version: ?([\d.]*)", current_version.stdout).group(1)
     except AttributeError:  # Not installed
@@ -305,7 +305,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             self.target_version = target_version
 
         def run(self):
-            out = subprocess.run([sys.executable, '-m', 'pip', 'install', f'pytube=={self.target_version}'],
+            out = subprocess.run(['pip', 'install', f'pytube=={self.target_version}'],
                                  capture_output=True, text=True)
             self.version.emit(self.target_version)
             self.finished.emit()
@@ -546,7 +546,7 @@ if __name__ == "__main__":
     sys._excepthook = sys.excepthook
     sys.excepthook = exception_hook
 
-    #out = subprocess.run([sys.executable, '-m', 'pip', 'install', 'pytube==10.9.0'], capture_output=True, text=True)
+    #out = subprocess.run(['pip', 'install', 'pytube==10.9.0'], capture_output=True, text=True)
 
     app = wid.QApplication([])
     window = wid.QMainWindow()
