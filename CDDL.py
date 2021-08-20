@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import traceback
 import json
+from distutils.version import StrictVersion  # Used to sort in get_module_versions
 
 #out = subprocess.run(["venv\\Scripts\\pyuic5.exe", 'ui.ui', '-o', 'designer_ui.py'], capture_output=True, text=True)
 import designer_ui
@@ -22,31 +23,12 @@ from pytube import exceptions as pt_exceptions
 logging.basicConfig(filename="log.txt", filemode="w", format="[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y/%m/%d %I:%M:%S %p")
 
 
-def get_module_version_data(module_name):
-    """Returns: [list_of_versions, last_version, current_version, is_module_up_to_date]"""
-    # Code based on https://stackoverflow.com/questions/58648739/how-to-check-if-python-package-is-latest-version-programmatically
-
-    # This forces an error, and the error returns a list of all of the version of this module.
-    # Surely there has to be a better way, but this is what I found online, and it functions.
-    latest_version = subprocess.run(['pip', 'install', f'{module_name}==random'], capture_output=True, text=True)
-    try:
-        # Gets the last version listed in the error.
-        all_versions = re.search(r"from versions: (.*?)(?:\))", latest_version.stderr).group(1).split(", ")
-        last_version = all_versions[-1]
-    except AttributeError:  # Internet error, as far as I know.
-        logging.error(f"Could not get latest version of {module_name}. Return:\n" + str(latest_version))
-        all_versions = []
-        last_version = ""
-
-    current_version = subprocess.run(["pip", "show", f"{module_name}"], capture_output=True, text=True)
-    try:
-        current_version = re.search(r"Version: ?([\d.]*)", current_version.stdout).group(1)
-    except AttributeError:  # Not installed
-        logging.error(f"Could not get current version of {module_name}. Return:\n" + str(current_version))
-        current_version = ""
-
-    up_to_date = False if last_version != current_version else True
-    return [all_versions, last_version, current_version, up_to_date]
+def get_module_versions(module_name):
+    url = f"https://pypi.org/pypi/{module_name}/json"
+    data = requests.get(url).json()
+    versions = list(data["releases"].keys())
+    versions.sort(key=StrictVersion)
+    return versions
 
 
 class CDDL_ui(designer_ui.Ui_MainWindow):
@@ -80,7 +62,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.bstopDownload.clicked.connect(self.stop_download)
 
         # Apply default settings
-        self.ioutputPath.setText(self.get_json("download path", ""))
+        self.ioutputPath.setText(self.get_json("download path", str(Path("."))))
         self.idownloadConvert.setCurrentText(self.get_json("download format", ".mp3"))
         self.idownloadURL.setText(self.get_json("download url", ""))
         self.iaudioOnly.setCheckState(self.get_json("audio only", 0))
@@ -277,7 +259,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
     class UpdateCheckWorker(qcore.QObject):
         """Checks for updates in PyTube/GitHub"""
         finished = qcore.pyqtSignal()
-        version_data = qcore.pyqtSignal(str, list)
+        version_data = qcore.pyqtSignal(str, list)  # Current version, list of versions.
         git_version = qcore.pyqtSignal(str)
 
         def run(self):
@@ -291,9 +273,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 logging.error(f"Could not get latest github version.\nStatus code: {status_code}\nException: {traceback.format_exc()}")
                 self.git_version.emit("Unknown")
 
-            # PyTube version.
-            data = get_module_version_data("pytube")
-            self.version_data.emit(data[2], data[0])
+            self.version_data.emit(pytube.__version__, get_module_versions("pytube"))
             self.finished.emit()
 
     class UpdatePytubeWorker(qcore.QObject):
@@ -530,7 +510,7 @@ def pad_hex(number, size=2):
 
 
 def exception_hook(exctype, value, traceback):
-    print(exctype, value, traceback)
+    logging.exception(f"{exctype} {value} {traceback}")
     sys._excepthook(exctype, value, traceback)
     sys.exit(1)
 
