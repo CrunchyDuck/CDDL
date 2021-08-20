@@ -342,7 +342,6 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 except Exception as e:
                     logging.warning(f"Error downloading playlist: {target_url}\n{traceback.format_exc()}")
                     self.log.append_message(f"Unknown error downloading playlist. Details in log.txt.")
-                    return
             # Is output path valid?
             # Is convert format valid?
             self.finished.emit()
