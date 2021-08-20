@@ -32,6 +32,7 @@ def get_module_versions(module_name):
 
 
 class CDDL_ui(designer_ui.Ui_MainWindow):
+    subprocess_no_window = 0x08000000
     def __init__(self, window):
         try:
             self.user_settings = json.load(open("user_settings.json", "r"))
@@ -62,10 +63,10 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.bstopDownload.clicked.connect(self.stop_download)
 
         # Apply default settings
-        self.ioutputPath.setText(self.get_json("download path", str(Path("."))))
+        self.ioutputPath.setText(self.get_json("download path", str(Path(".").resolve())))
         self.idownloadConvert.setCurrentText(self.get_json("download format", ".mp3"))
         self.idownloadURL.setText(self.get_json("download url", ""))
-        self.iaudioOnly.setCheckState(self.get_json("audio only", 0))
+        self.iaudioOnly.setCheckState(self.get_json("audio only", 2))
         self.iprefix.setCheckState(self.get_json("prefix", 2))
         self.set_download_mode()
 
@@ -171,6 +172,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
     def download(self):
         """Triggered when the download button is pressed."""
+        self.get_download_mode()
         mode = self.get_json("mode", "")
         if not mode:
             logging.error("Download mode not found.")
@@ -285,8 +287,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             self.target_version = target_version
 
         def run(self):
-            out = subprocess.run(['pip', 'install', f'pytube=={self.target_version}'],
-                                 capture_output=True, text=True)
+            subprocess.run(['pip', 'install', f'pytube=={self.target_version}'])
             self.version.emit(self.target_version)
             self.finished.emit()
 
@@ -385,18 +386,22 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 if not self.audio_only:
                     video = YouTubeObj.streams.order_by("resolution")[-1]
                     video_path = video.download(output_path=self.output_path, filename="cddl_video")
-                    #self.log.append_message("Downloaded video")
 
                     self.log.append_message("Converting...")
-                    subprocess.run(["ffmpeg", '-i', video_path, "-i", audio_path, "-c", "copy", output_path], capture_output=True, text=True, input="y")
-                    logging.info(f"Downloaded {file_name}")
-                    self.log.append_message(f"Downloaded {file_name}")
+                    subprocess.run(["ffmpeg", '-i', video_path, "-i", audio_path, "-c", "copy", output_path], creationflags=CDDL_ui.subprocess_no_window)#, input="y")
+                    if Path(output_path).stat().st_size == 0:
+                        self.log.append_message(f"\"{YouTubeObj.title}\" didn't download properly."
+                                                f"<br>Is {self.convert_to} a valid video format? Did you mean to toggle Audio Only on?")
+                        os.remove(output_path)
+                    else:
+                        logging.info(f"Downloaded {file_name}")
+                        self.log.append_message(f"Downloaded {file_name}")
 
                     os.remove(audio_path)
                     os.remove(video_path)
                 else:
                     self.log.append_message("Converting...")
-                    subprocess.run(["ffmpeg", "-i", audio_path, output_path], capture_output=True, text=True, input="y")
+                    subprocess.run(["ffmpeg", "-i", audio_path, output_path], creationflags=CDDL_ui.subprocess_no_window)#, input="y")
                     self.log.append_message(f"Downloaded {file_name}")
                     os.remove(audio_path)
             except Exception as e:
