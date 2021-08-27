@@ -1,9 +1,11 @@
+# This should be the latest version available.
+pytube
+
 certifi==2021.5.30
 charset-normalizer==2.0.3
 idna==3.2
 PyQt5==5.15.4
 PyQt5-Qt5==5.15.2
 PyQt5-sip==12.9.0
-pytube==10.9.2
 requests==2.26.0
 urllib3==1.26.6
