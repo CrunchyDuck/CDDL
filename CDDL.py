@@ -30,7 +30,9 @@ def get_module_versions(module_name):
     versions.sort(key=StrictVersion)
     return versions
 
-
+# TODO: Simplify the file formats to remove the audio only check
+# TODO: Try to move dependency for FFMPEG to the python wrapper
+# TODO: Bandcamp, soundcloud.
 class CDDL_ui(designer_ui.Ui_MainWindow):
     subprocess_no_window = 0x08000000
     def __init__(self, window):
@@ -293,6 +295,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
     class DownloadWorker(qcore.QObject):
         finished = qcore.pyqtSignal()
+        # TODO: Find a way to make the stop function intercept downloads. Let it stop 1 hour long download songs.
 
         def __init__(self, output_log, url, audio_only, output_path, convert_to, mode, prefix):
             super().__init__()
