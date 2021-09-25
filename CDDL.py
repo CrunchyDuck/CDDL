@@ -18,6 +18,7 @@ from distutils.version import StrictVersion  # Used to sort in get_module_versio
 #out = subprocess.run(["venv\\Scripts\\pyuic5.exe", 'ui.ui', '-o', 'designer_ui.py'], capture_output=True, text=True)
 import designer_ui
 import pytube
+from pytube import request
 from pytube import exceptions as pt_exceptions
 
 logging.basicConfig(filename="log.txt", filemode="w", format="[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y/%m/%d %I:%M:%S %p")
@@ -382,36 +383,76 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
                 self.log.append_message(f"Downloading {YouTubeObj.title}...")
 
-                audio = YouTubeObj.streams.order_by("abr")[-1]
-                audio_path = audio.download(output_path=self.output_path, filename="cddl_audio")
-                #self.log.append_message("Downloaded audio")
-                if not self.audio_only:
-                    video = YouTubeObj.streams.order_by("resolution")[-1]
-                    video_path = video.download(output_path=self.output_path, filename="cddl_video")
-
-                    self.log.append_message("Converting...")
-                    subprocess.run(["ffmpeg", '-i', video_path, "-i", audio_path, "-c", "copy", output_path], creationflags=CDDL_ui.subprocess_no_window)#, input="y")
-                    if Path(output_path).stat().st_size == 0:
-                        self.log.append_message(f"\"{YouTubeObj.title}\" didn't download properly."
-                                                f"<br>Is {self.convert_to} a valid video format? Did you mean to toggle Audio Only on?")
-                        os.remove(output_path)
+                audio = YouTubeObj.streams.filter(progressive=False).order_by("abr")[-1]  # MP4 if progressive, WEBM otherwise.
+                # MP4
+                if audio.is_progressive:
+                    # Download to extract audio
+                    if self.audio_only:
+                        path = f"{self.file_directory}/cddl.mp4"
+                    # Download directly
                     else:
-                        logging.info(f"Downloaded {file_name}")
-                        self.log.append_message(f"Downloaded {file_name}")
+                        path = output_path
+                    self.download_stream(audio, path)
+                    if self.stop:
+                        return
 
-                    os.remove(audio_path)
-                    os.remove(video_path)
-                else:
-                    self.log.append_message("Converting...")
-                    subprocess.run(["ffmpeg", "-i", audio_path, output_path], creationflags=CDDL_ui.subprocess_no_window)#, input="y")
+                    # Extract audio from mp4
+                    if self.audio_only:
+                        subprocess.run(["ffmpeg -i", path, "-vn -acodec copy", output_path], creationflags=CDDL_ui.subprocess_no_window)
+                    logging.info(f"Downloaded {file_name}")
                     self.log.append_message(f"Downloaded {file_name}")
+                # WEBM
+                else:
+                    audio_path = f"{self.file_directory}/cddl_audio"
+                    self.download_stream(audio, audio_path)
+                    if self.stop:
+                        return
+
+                    # Convert
+                    if self.audio_only:
+                        subprocess.run(["ffmpeg", "-i", audio_path, output_path], creationflags=CDDL_ui.subprocess_no_window)
+                    # Download video
+                    else:
+                        video_path = f"{self.file_directory}/cddl_video"
+                        video = YouTubeObj.streams.filter(progressive=False).order_by("resolution")[-1]  # Get best video
+                        self.download_stream(video, video_path)
+                        if self.stop:
+                            os.remove(audio_path)
+                            return
+                        # Combine audio and video
+                        subprocess.run(["ffmpeg -i", video_path, "-i", audio_path, "-c:v copy -c:a aac", output_path], creationflags=CDDL_ui.subprocess_no_window)
+                        os.remove(video_path)
                     os.remove(audio_path)
+
+                    logging.info(f"Downloaded {file_name}")
+                    self.log.append_message(f"Downloaded {file_name}")
             except Exception as e:
                 if final_attempt:
                     self.log.append_message(f"Unknown error downloading {url}, details in log.txt")
                 logging.error(f"Could not download {url}.\n{traceback.format_exc()}")
                 return
             return True
+
+        def download_stream(self, stream, filepath):
+            amount_downloaded = 0
+            amount_to_download = stream.filesize
+            stream = pytube.request.stream(stream.url)
+            with open(filepath, "wb") as f:
+                while amount_downloaded < amount_to_download:
+                    if self.stop:
+                        break
+                    chunk = next(stream, None)
+                    if chunk:
+                        f.write(chunk)
+                        amount_downloaded += len(chunk)
+                    else:
+                        break
+
+            if self.stop:
+                os.remove(filepath)
+
+
+
 
 
 class StatusLog:
@@ -522,18 +563,17 @@ def exception_hook(exctype, value, traceback):
     sys.exit(1)
 
 
-if __name__ == "__main__":
+def main():
     # NOTE: Naming scheme.
     # GUI objects are given a prefix based on their function.
     # t - General, non-editable text
     # i - Input field/editable text
     # b - Button
     # w - Widget/container
-
     sys._excepthook = sys.excepthook
     sys.excepthook = exception_hook
 
-    #out = subprocess.run(['pip', 'install', 'pytube==10.9.0'], capture_output=True, text=True)
+    # out = subprocess.run(['pip', 'install', 'pytube==10.9.0'], capture_output=True, text=True)
 
     app = wid.QApplication([])
     window = wid.QMainWindow()
@@ -543,3 +583,7 @@ if __name__ == "__main__":
         app.exec()
     except Exception as e:
         logging.critical(f"Program closed. Exception: {traceback.format_exc()}")
+
+
+if __name__ == "__main__":
+    main()
