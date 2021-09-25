@@ -31,6 +31,7 @@ def get_module_versions(module_name):
     versions.sort(key=StrictVersion)
     return versions
 
+
 # TODO: Simplify the file formats to remove the audio only check
 # TODO: Try to move dependency for FFMPEG to the python wrapper
 # TODO: Bandcamp, soundcloud.
@@ -56,6 +57,8 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.MainWindow.setWindowIcon(qgui.QIcon("images/window_icon.png"))  # Window icon
 
         self.idownloadConvert.addItems([".mp3", ".flac", ".wav", ".mp4"])
+        self.progress_bar = wid.QProgressBar()
+        self.statusbar.addPermanentWidget(self.progress_bar)
 
         # Assign buttons
         self.brefreshVersions.clicked.connect(self.refresh_versions)
@@ -92,7 +95,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
         self.refresh_versions()
 
-    # ====== Buttons ====== #
+    # ====== Connections ====== #
     def update_buttons_enable(self):
         self.bupdatePytube.setEnabled(True)
         self.brefreshVersions.setEnabled(True)
@@ -195,6 +198,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
         w.moveToThread(t)
         t.started.connect(w.run)
+        w.download_status.connect(self.update_download_bar)
         w.finished.connect(t.quit)
         w.finished.connect(w.deleteLater)
         w.finished.connect(self.update_buttons_enable)
@@ -217,6 +221,10 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         if explorer.exec():
             path = explorer.selectedFiles()[0]
             self.ioutputPath.setText(path)
+
+    def update_download_bar(self, current, max):
+        self.progress_bar.setMaximum(max)
+        self.progress_bar.setValue(current)
 
     # ====== General functions ====== #
     def update_git_version_info(self, version):
@@ -296,6 +304,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
     class DownloadWorker(qcore.QObject):
         finished = qcore.pyqtSignal()
+        download_status = qcore.pyqtSignal(int, int)
         # TODO: Find a way to make the stop function intercept downloads. Let it stop 1 hour long download songs.
 
         def __init__(self, output_log, url, audio_only, output_path, convert_to, mode, prefix):
@@ -383,7 +392,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
                 self.log.append_message(f"Downloading {YouTubeObj.title}...")
 
-                audio = YouTubeObj.streams.filter(progressive=False).order_by("abr")[-1]  # MP4 if progressive, WEBM otherwise.
+                audio = YouTubeObj.streams.order_by("abr")[-1]  # MP4 if progressive, WEBM otherwise.
                 # MP4
                 if audio.is_progressive:
                     # Download to extract audio
@@ -447,12 +456,10 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                         amount_downloaded += len(chunk)
                     else:
                         break
-
+                    self.download_status.emit(amount_downloaded, amount_to_download)
+            self.download_status.emit(0, 1)  # Finished.
             if self.stop:
                 os.remove(filepath)
-
-
-
 
 
 class StatusLog:
