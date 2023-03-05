@@ -385,7 +385,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 file_name = prefix + YouTubeObj.title + self.convert_to
                 file_name = "".join(x for x in file_name if x not in "\\/:*?\"<>|")
                 file_directory = self.output_path
-                output_path = f"{file_directory}\\{file_name}"
+                output_path = os.path.join(file_directory, file_name)
                 if Path(output_path).exists():
                     self.log.append_message(f"{file_name} already downloaded.")
                     return True
