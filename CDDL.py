@@ -37,6 +37,7 @@ def get_module_versions(module_name):
 # TODO: Bandcamp, soundcloud.
 class CDDL_ui(designer_ui.Ui_MainWindow):
     subprocess_no_window = 0x08000000
+
     def __init__(self, window):
         try:
             self.user_settings = json.load(open("user_settings.json", "r"))
@@ -331,12 +332,12 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                     if worked or self.stop:
                         break
                     self.log.append_message("Failed, retrying...")
-            else:  # Playlist
+            # Playlist
+            else:
                 try:
                     playlist = pytube.Playlist(target_url)
-                    i = 1
                     num_in_playlist = len(playlist.video_urls)
-                    for x in range(num_in_playlist):
+                    for i in range(num_in_playlist):
                         if self.stop: break
 
                         self.log.add_message(f"Downloading {self.url}")
@@ -347,7 +348,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                             pl_num = ""
                         for j in range(5):
                             if self.stop: break
-                            final_attempt = True if i == 4 else False
+                            final_attempt = True if j == 4 else False
                             worked = self.download_video(playlist.video_urls[i], pl_num, final_attempt)
                             if worked or self.stop:
                                 break
