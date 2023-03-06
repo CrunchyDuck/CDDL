@@ -343,7 +343,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                         self.log.add_message(f"Downloading {self.url}")
 
                         if self.prefix:
-                            pl_num = f"000{i + 1} "[-4:]
+                            pl_num = f"000{i + 1}"[-4:]
                         else:
                             pl_num = ""
                         for j in range(5):
@@ -367,6 +367,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             # Load youtube object
             try:
                 YouTubeObj = pytube.YouTube(url)
+                ChannelObj = pytube.Channel(YouTubeObj.channel_url)
             except pt_exceptions.RegexMatchError:
                 if final_attempt:
                     logging.warning(f"Could not find url in {url}")
@@ -383,7 +384,10 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 return
 
             try:
-                file_name = prefix + YouTubeObj.title + self.convert_to
+                channel_name = ChannelObj.channel_name
+                if channel_name.endswith(" - Topic"):
+                    channel_name = channel_name[:-8]
+                file_name = f"{prefix} - {channel_name} - {YouTubeObj.title}{self.convert_to}"
                 file_name = "".join(x for x in file_name if x not in "\\/:*?\"<>|")
                 file_directory = self.output_path
                 output_path = os.path.join(file_directory, file_name)
