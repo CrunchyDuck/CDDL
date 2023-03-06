@@ -277,7 +277,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         git_version = qcore.pyqtSignal(str)
 
         def run(self):
-            # Github version
+            # GitHub version
             status_code = -1
             try:
                 x = requests.get("https://api.github.com/repos/CrunchyDuck/YTDL/releases")
@@ -308,7 +308,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         download_status = qcore.pyqtSignal(int, int)
         # TODO: Find a way to make the stop function intercept downloads. Let it stop 1 hour long download songs.
 
-        def __init__(self, output_log, url, audio_only, output_path, convert_to, mode, prefix):
+        def __init__(self, output_log: 'StatusLog', url, audio_only, output_path, convert_to, mode, prefix):
             super().__init__()
             self.log = output_log
             self.url = url
@@ -331,7 +331,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                     worked = self.download_video(target_url, final_attempt=final_attempt)
                     if worked or self.stop:
                         break
-                    self.log.append_message("Failed, retrying...")
+                    self.log.add_message("Failed, retrying...", color="FF0000")
             # Playlist
             else:
                 try:
@@ -341,9 +341,10 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                         if self.stop: break
 
                         self.log.add_message(f"Downloading {self.url}")
+                        self.log.add_message("\n")
 
                         if self.prefix:
-                            pl_num = f"000{i + 1}"[-4:]
+                            pl_num = f"000{i + 1}"[-3:] + " - "
                         else:
                             pl_num = ""
                         for j in range(5):
@@ -352,10 +353,10 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                             worked = self.download_video(playlist.video_urls[i], pl_num, final_attempt)
                             if worked or self.stop:
                                 break
-                            self.log.append_message("Failed, retrying...")
+                            self.log.add_message("Failed, retrying...", color="FF0000")
                 except Exception as e:
                     logging.warning(f"Error downloading playlist: {target_url}\n{traceback.format_exc()}")
-                    self.log.append_message(f"Unknown error downloading playlist. Details in log.txt.")
+                    self.log.add_message(f"Unknown error downloading playlist. Details in log.txt.", color="FF0000")
             # Is output path valid?
             # Is convert format valid?
             self.finished.emit()
@@ -366,92 +367,143 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             """
             # Load youtube object
             try:
-                YouTubeObj = pytube.YouTube(url)
-                ChannelObj = pytube.Channel(YouTubeObj.channel_url)
+                video_obj = pytube.YouTube(url)
+                ChannelObj = pytube.Channel(video_obj.channel_url)
             except pt_exceptions.RegexMatchError:
                 if final_attempt:
                     logging.warning(f"Could not find url in {url}")
-                self.log.append_message(f"Could not find url in {url}")
+                self.log.add_message(f"Could not find url in {url}", color="FF0000")
                 return
             except pt_exceptions.VideoPrivate:
                 if final_attempt:
-                    self.log.append_message(f"Video is private: {url}")
+                    self.log.add_message(f"Video is private: {url}", color="FF0000")
                 return
             except Exception as e:
                 if final_attempt:
                     logging.error(f"Unknown error fetching {url}\n{traceback.format_exc()}")
-                self.log.append_message(f"Error finding {url}, skipping...")
+                self.log.add_message(f"Error finding {url}, skipping...", color="FF0000")
                 return
 
             try:
                 channel_name = ChannelObj.channel_name
                 if channel_name.endswith(" - Topic"):
                     channel_name = channel_name[:-8]
-                file_name = f"{prefix} - {channel_name} - {YouTubeObj.title}{self.convert_to}"
+
+                file_name = f"{prefix}{channel_name} - {video_obj.title}{self.convert_to}"
+                # Remove special characters
                 file_name = "".join(x for x in file_name if x not in "\\/:*?\"<>|")
                 file_directory = self.output_path
-                output_path = os.path.join(file_directory, file_name)
-                if Path(output_path).exists():
-                    self.log.append_message(f"{file_name} already downloaded.")
+                output_path = Path(file_directory, file_name)
+                if output_path.exists():
+                    self.log.add_message(f"{file_name} already downloaded.", color="00FF00")
+                    self.log.add_message("\n")
                     return True
 
-                self.log.append_message(f"Downloading {YouTubeObj.title}...")
+                self.log.add_message(f"Downloading {video_obj.title}...")
 
-                audio = YouTubeObj.streams.order_by("abr")[-1]  # MP4 if progressive, WEBM otherwise.
+                audio_stream = video_obj.streams.order_by("abr")[-1]  # MP4 if progressive, WEBM otherwise.
                 # MP4
-                if audio.is_progressive:
-                    # Download to extract audio
-                    if self.audio_only:
-                        path = f"{self.file_directory}/cddl.mp4"
-                    # Download directly
-                    else:
-                        path = output_path
-                    self.download_stream(audio, path)
-                    if self.stop:
-                        return
-
-                    # Extract audio from mp4
-                    if self.audio_only:
-                        subprocess.run(["ffmpeg -i", path, "-vn -acodec copy", output_path], creationflags=CDDL_ui.subprocess_no_window)
-                    logging.info(f"Downloaded {file_name}")
-                    self.log.append_message(f"Downloaded {file_name}")
+                if audio_stream.is_progressive:
+                    if not self.download_mp4(output_path, audio_stream):
+                        return False
                 # WEBM
                 else:
-                    audio_path = f"{self.file_directory}/cddl_audio"
-                    self.download_stream(audio, audio_path)
-                    if self.stop:
-                        return
-
-                    # Convert
-                    if self.audio_only:
-                        subprocess.run(["ffmpeg", "-i", audio_path, output_path], creationflags=CDDL_ui.subprocess_no_window)
-                    # Download video
-                    else:
-                        video_path = f"{self.file_directory}/cddl_video"
-                        video = YouTubeObj.streams.filter(progressive=False).order_by("resolution")[-1]  # Get best video
-                        self.download_stream(video, video_path)
-                        if self.stop:
-                            os.remove(audio_path)
-                            return
-                        # Combine audio and video
-                        subprocess.run(["ffmpeg -i", video_path, "-i", audio_path, "-c:v copy -c:a aac", output_path], creationflags=CDDL_ui.subprocess_no_window)
-                        os.remove(video_path)
-                    os.remove(audio_path)
-
-                    logging.info(f"Downloaded {file_name}")
-                    self.log.append_message(f"Downloaded {file_name}")
+                    if not self.download_webm(output_path, audio_stream, video_obj):
+                        return False
             except Exception as e:
                 if final_attempt:
-                    self.log.append_message(f"Unknown error downloading {url}, details in log.txt")
+                    self.log.add_message(f"Unknown error downloading {url}, details in log.txt", color="FF0000")
                 logging.error(f"Could not download {url}.\n{traceback.format_exc()}")
                 return
             return True
 
-        def download_stream(self, stream, filepath):
+        def download_mp4(self, output_path: Path, audio_stream: pytube.Stream) -> bool:
+            is_mp4 = output_path.suffix == "mp4"
+            # Download to extract audio
+            if not is_mp4:
+                path = Path(output_path.parent, "cddl.mp4")
+            # Download directly
+            else:
+                path = output_path
+            self.download_stream(path, audio_stream)
+            if self.stop:
+                return False
+
+            # Extract audio from mp4
+            if not is_mp4:
+                # TODO: Update progress bar for this.
+                if os.name == 'nt':
+                    subprocess.run(["ffmpeg",
+                                    "-i", path,
+                                    "-vn",
+                                    #"-acodec", "copy",  This doesn't work anymore as youtube has 2 streams in its audio
+                                    output_path],
+                                   creationflags=CDDL_ui.subprocess_no_window)
+                else:
+                    subprocess.run(["ffmpeg",
+                                    "-i", path,
+                                    "-vn",
+                                    #"-acodec", "copy",
+                                    output_path])
+                os.remove(path)
+            logging.info(f"Downloaded {output_path.name}")
+            self.log.add_message(f"Downloaded {output_path.name}", color="00FF00")
+            self.log.add_message("\n")
+            return True
+
+        def download_webm(self, output_path: Path, audio_stream: pytube.Stream, video_obj: pytube.YouTube) -> bool:
+            is_mp4 = output_path.suffix == "mp4"
+            audio_path = Path(output_path.parent, "cddl_audio")
+            self.download_stream(audio_path, audio_stream)
+            if self.stop:
+                return False
+
+            if not is_mp4:
+                if os.name == 'nt':
+                    subprocess.run(["ffmpeg",
+                                    "-i", audio_path,
+                                    str(output_path)], creationflags=CDDL_ui.subprocess_no_window)
+                else:
+                    subprocess.run(["ffmpeg",
+                                    "-i", audio_path,
+                                    str(output_path)])
+            else:
+                video_path = Path(output_path.parent, "cddl_video")
+                video = video_obj.streams.filter(progressive=False).order_by("resolution")[-1]  # Get best file
+                self.download_stream(video_path, video)
+                if self.stop:
+                    os.remove(audio_path)
+                    return False
+                # Combine audio and video and convert to mp4
+                if os.name == 'nt':
+                    subprocess.run(["ffmpeg",
+                                    "-i", video_path,
+                                    "-i", audio_path,
+                                    "-c:v", "copy",
+                                    "-c:a", "aac",
+                                    output_path], creationflags=CDDL_ui.subprocess_no_window)
+                else:
+                    subprocess.run(["ffmpeg",
+                                    "-i", video_path,
+                                    "-i", audio_path,
+                                    "-c:v", "copy",
+                                    "-c:a", "aac",
+                                    output_path])
+                os.remove(video_path)
+            os.remove(audio_path)
+
+            logging.info(f"Downloaded {output_path.name}")
+            self.log.add_message(f"Downloaded {output_path.name}", color="00FF00")
+            self.log.add_message("\n")
+            return True
+
+        def download_stream(self, output_path: Path, stream: pytube.Stream):
             amount_downloaded = 0
             amount_to_download = stream.filesize
             stream = pytube.request.stream(stream.url)
-            with open(filepath, "wb") as f:
+            if not os.path.exists(output_path.parent):
+                os.makedirs(output_path.parent)
+            with open(output_path, "wb") as f:
                 while amount_downloaded < amount_to_download:
                     if self.stop:
                         break
@@ -464,7 +516,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                     self.download_status.emit(amount_downloaded, amount_to_download)
             self.download_status.emit(0, 1)  # Finished.
             if self.stop:
-                os.remove(filepath)
+                os.remove(output_path)
 
 
 class StatusLog:
@@ -493,7 +545,7 @@ class StatusLog:
         # text_cursor = self.label.textCursor().position()  # TODO: Make text reselect.
         # TODO: Make it auto scroll if at the bottom of the scroll bar.
 
-        label_content = "<html><head/><body>"
+        label_content = "<html><head/><body><p>"
         self.message_list = [x for x in self.message_list if x["duration"] > 0]  # Clear list of "dead" entries.
         # Fade text, add text to the label_content
         for m in self.message_list:
@@ -502,13 +554,13 @@ class StatusLog:
                     message_color = color_lerp(m["color"], self.background_colour, m["duration"] / fade_threshold)
                 else:
                     message_color = m["color"]
-                label_content += f"<p><span style=\"color:#{message_color};\">{m['message']}</p>"
+                label_content += f"<span style=\"color:#{message_color};\">{m['message']}<br/>"
                 m["duration"] -= delta_time
             else:
                 message_color = m["color"]
-                label_content += f"<p><span style=\"color:#{message_color};\">{m['message']}</p>"
+                label_content += f"<span style=\"color:#{message_color};\">{m['message']}<br/>"
 
-        label_content += "</body></html>"
+        label_content += "</p></body></html>"
         self.label.setText(label_content)
 
         # If this isn't done, scroll will be set to the top constantly.
@@ -527,12 +579,12 @@ class StatusLog:
             duration = self.default_duration
         self.message_list.append({"message": message, "duration": duration, "color": color})
 
-    def append_message(self, message):
-        """Adds the given text to the last message."""
-        if self.message_list:
-            self.message_list[-1]["message"] += f"<br/>{message}"
-        else:
-            self.add_message(message, self.default_duration, "000000")
+    # def append_message(self, message):
+    #     """Adds the given text to the last message."""
+    #     if self.message_list:
+    #         self.message_list[-1]["message"] += f"<br/>{message}"
+    #     else:
+    #         self.add_message(message, self.default_duration, "000000")
 
 
 def color_lerp(color1, color2, t):
