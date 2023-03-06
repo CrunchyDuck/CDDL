@@ -6,9 +6,9 @@ import os
 # Only on Linux systems, adds relevant metadata to the files in the provided folder.
 # lame is needed to run this.
 re_pattern = r"(\d\d\d) - (.+).mp3"
-album_folder = Path("/home/duck/Audio/Music/Albums/2 Mello/Memories Of Tokyo-To/")
+album_folder = Path("/home/duck/Audio/Music/Albums/Disasterpeace/Disasters For Piano/")
 album_name = album_folder.name
-artist_name = album_folder.parent
+artist_name = album_folder.parent.name
 album_cover = Path(album_folder, "album.jpg")
 
 songs = album_folder.glob("**/*.mp3")
