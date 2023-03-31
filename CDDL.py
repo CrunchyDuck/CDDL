@@ -341,7 +341,6 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                         if self.stop: break
 
                         self.log.add_message(f"Downloading {self.url}")
-                        self.log.add_message("\n")
 
                         if self.prefix:
                             pl_num = f"000{i + 1}"[-3:] + " - "
@@ -389,7 +388,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 if channel_name.endswith(" - Topic"):
                     channel_name = channel_name[:-8]
 
-                file_name = f"{prefix}{channel_name} - {video_obj.title}{self.convert_to}"
+                file_name = f"{prefix}{video_obj.title}{self.convert_to}"
                 # Remove special characters
                 file_name = "".join(x for x in file_name if x not in "\\/:*?\"<>|")
                 file_directory = self.output_path
