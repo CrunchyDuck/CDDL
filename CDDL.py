@@ -332,6 +332,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                     if worked or self.stop:
                         break
                     self.log.add_message("Failed, retrying...", color="FF0000")
+                    time.sleep(1)
             # Playlist
             else:
                 try:
@@ -353,6 +354,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                             if worked or self.stop:
                                 break
                             self.log.add_message("Failed, retrying...", color="FF0000")
+                            time.sleep(1)
                 except Exception as e:
                     logging.warning(f"Error downloading playlist: {target_url}\n{traceback.format_exc()}")
                     self.log.add_message(f"Unknown error downloading playlist. Details in log.txt.", color="FF0000")
