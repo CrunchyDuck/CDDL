@@ -1,0 +1,5 @@
+_pycache_/
+.git/
+.idea/
+venv/
+log.txt
