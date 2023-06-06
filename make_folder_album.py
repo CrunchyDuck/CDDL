@@ -46,19 +46,23 @@ def main():
     # Only on Linux systems, adds relevant metadata to the files in the provided folder.
     file_format = "flac"  # flac or mp3 supported
     re_pattern = r"(\d\d\d) - (.+)." + file_format
-    album_folder = Path("/home/duck/Audio/Music/Albums/Psychedelic Porn Crumpets/High Visceral B Sides/")
-    album_name = "High Visceral B Sides"  #album_folder.name
-    artist_name = "Psychedelic Porn Crumpets"  #album_folder.parent.name
-    album_cover = Path(album_folder, "album.jpg")
+    album_folder = Path("/home/duck/Audio/Music/Albums/Ozma/Spending Time On The Borderline/")
+    album_name = album_folder.name
+    #album_name = "High Visceral B Sides"  #album_folder.name
+    artist_name = album_folder.parent.name
+    #artist_name = "Psychedelic Porn Crumpets"  #album_folder.parent.name
 
     songs = album_folder.glob("**/*." + file_format)
     for song in songs:
         print("Processing " + song.name + "...")
         re_result = re.search(re_pattern, song.name)
 
-        track_num = str(int(re_result.group(1)))
-        track_name = re_result.group(2)
-        output_file = Path(album_folder, f"{track_name}.{file_format}")
+        try:
+            track_num = str(int(re_result.group(1)))
+            track_name = re_result.group(2)
+            output_file = Path(album_folder, f"{track_name}.{file_format}")
+        except:
+            continue
 
         # lame is needed to run this.
         if file_format == "mp3":
