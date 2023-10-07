@@ -7,3 +7,4 @@ idna
 PyQt5
 requests
 urllib3
+ffmpeg-python

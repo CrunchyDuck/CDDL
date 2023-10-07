@@ -42,15 +42,12 @@ def process_flac(input_file: str, output_file: str, artist_name: str, album_name
     print(f"Finished processing song: {output_file}")
 
 
-def main():
-    # Only on Linux systems, adds relevant metadata to the files in the provided folder.
+def process(file_path):
     file_format = "flac"  # flac or mp3 supported
     re_pattern = r"(\d\d\d) - (.+)." + file_format
-    album_folder = Path("/home/duck/Audio/Music/Albums/Ozma/Spending Time On The Borderline/")
+    album_folder = Path(file_path)
     album_name = album_folder.name
-    #album_name = "High Visceral B Sides"  #album_folder.name
     artist_name = album_folder.parent.name
-    #artist_name = "Psychedelic Porn Crumpets"  #album_folder.parent.name
 
     songs = album_folder.glob("**/*." + file_format)
     for song in songs:
@@ -72,4 +69,9 @@ def main():
             process_flac(str(song), str(output_file), artist_name, album_name, track_name, track_num)
 
 
-main()
+def main():
+    process("F:\Libraries\Audio\Music\Albums\Disparition\Welcome To Night Vale")
+
+
+if __name__ == "__main__":
+    main()

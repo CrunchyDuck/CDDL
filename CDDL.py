@@ -20,6 +20,8 @@ import designer_ui
 import pytube
 from pytube import request
 from pytube import exceptions as pt_exceptions
+import ffmpeg
+import make_folder_album
 
 logging.basicConfig(filename="log.txt", filemode="w", format="[%(asctime)s] %(levelname)s: %(message)s", datefmt="%Y/%m/%d %I:%M:%S %p")
 
@@ -33,7 +35,6 @@ def get_module_versions(module_name):
 
 
 # TODO: Simplify the file formats to remove the audio only check
-# TODO: Try to move dependency for FFMPEG to the python wrapper
 # TODO: Bandcamp, soundcloud.
 class CDDL_ui(designer_ui.Ui_MainWindow):
     subprocess_no_window = 0x08000000
@@ -82,6 +83,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         self.idownloadConvert.currentTextChanged.connect(lambda text: self.update_json("download format", str(text)))
         self.idownloadURL.textChanged.connect(lambda text: self.update_json("download url", str(text)))
         self.iaudioOnly.stateChanged.connect(lambda state: self.update_json("audio only", state))
+        self.iconvertToAlbum.stateChanged.connect(lambda state: self.update_json("convert to album", state))
         self.iprefix.stateChanged.connect(lambda state: self.update_json("prefix", state))
         self.bdownloadModePlaylist.clicked.connect(self.get_download_mode)
         self.bdownloadModeVideo.clicked.connect(self.get_download_mode)
@@ -164,9 +166,11 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
 
         if mode == "playlist":
             self.iprefix.setEnabled(True)
+            self.iconvertToAlbum.setEnabled(True)
             self.bdownloadModePlaylist.setChecked(True)
         else:  # Video
             self.iprefix.setEnabled(False)
+            self.iconvertToAlbum.setEnabled(False)
             self.bdownloadModeVideo.setChecked(True)
 
     def get_download_mode(self):
@@ -193,7 +197,8 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         else:
             prefix = 0
         self.worker = self.DownloadWorker(self.downloadStatusLog, self.idownloadURL.text(), self.iaudioOnly.isChecked(),
-                                          self.ioutputPath.text(), self.idownloadConvert.currentText(), mode, prefix)
+                                          self.ioutputPath.text(), self.idownloadConvert.currentText(),
+                                          self.iconvertToAlbum.isChecked(), mode, prefix)
         t = self.updating_thread
         w = self.worker
 
@@ -308,7 +313,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
         download_status = qcore.pyqtSignal(int, int)
         # TODO: Find a way to make the stop function intercept downloads. Let it stop 1 hour long download songs.
 
-        def __init__(self, output_log: 'StatusLog', url, audio_only, output_path, convert_to, mode, prefix):
+        def __init__(self, output_log: 'StatusLog', url, audio_only, output_path, convert_to, make_album, mode, prefix):
             super().__init__()
             self.log = output_log
             self.url = url
@@ -317,6 +322,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             self.convert_to = convert_to
             self.mode = mode
             self.prefix = prefix
+            self.make_album = make_album
 
             self.stop = False
 
@@ -358,6 +364,8 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 except Exception as e:
                     logging.warning(f"Error downloading playlist: {target_url}\n{traceback.format_exc()}")
                     self.log.add_message(f"Unknown error downloading playlist. Details in log.txt.", color="FF0000")
+                if self.make_album:
+                    make_folder_album.process(self.output_path)
             # Is output path valid?
             # Is convert format valid?
             self.finished.emit()
@@ -433,19 +441,11 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             # Extract audio from mp4
             if not is_mp4:
                 # TODO: Update progress bar for this.
-                if os.name == 'nt':
-                    subprocess.run(["ffmpeg",
-                                    "-i", path,
-                                    "-vn",
-                                    #"-acodec", "copy",  This doesn't work anymore as youtube has 2 streams in its audio
-                                    output_path],
-                                   creationflags=CDDL_ui.subprocess_no_window)
-                else:
-                    subprocess.run(["ffmpeg",
-                                    "-i", path,
-                                    "-vn",
-                                    #"-acodec", "copy",
-                                    output_path])
+                (
+                    ffmpeg.input(str(path))
+                    .output(str(output_path), vn=None)
+                    .run()
+                )
                 os.remove(path)
             logging.info(f"Downloaded {output_path.name}")
             self.log.add_message(f"Downloaded {output_path.name}", color="00FF00")
@@ -460,14 +460,11 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                 return False
 
             if not is_mp4:
-                if os.name == 'nt':
-                    subprocess.run(["ffmpeg",
-                                    "-i", audio_path,
-                                    str(output_path)], creationflags=CDDL_ui.subprocess_no_window)
-                else:
-                    subprocess.run(["ffmpeg",
-                                    "-i", audio_path,
-                                    str(output_path)])
+                (
+                    ffmpeg.input(audio_path)
+                    .output(str(output_path))
+                    .run()
+                )
             else:
                 video_path = Path(output_path.parent, "cddl_video")
                 video = video_obj.streams.filter(progressive=False).order_by("resolution")[-1]  # Get best file
@@ -476,20 +473,12 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
                     os.remove(audio_path)
                     return False
                 # Combine audio and video and convert to mp4
-                if os.name == 'nt':
-                    subprocess.run(["ffmpeg",
-                                    "-i", video_path,
-                                    "-i", audio_path,
-                                    "-c:v", "copy",
-                                    "-c:a", "aac",
-                                    output_path], creationflags=CDDL_ui.subprocess_no_window)
-                else:
-                    subprocess.run(["ffmpeg",
-                                    "-i", video_path,
-                                    "-i", audio_path,
-                                    "-c:v", "copy",
-                                    "-c:a", "aac",
-                                    output_path])
+                (
+                    ffmpeg.input(video_path)
+                    .input(audio_path)
+                    .output(output_path, vcodec="copy", acodec="aac")
+                    .run()
+                )
                 os.remove(video_path)
             os.remove(audio_path)
 

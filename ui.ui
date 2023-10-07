@@ -18,7 +18,7 @@
     <item row="0" column="0">
      <widget class="QTabWidget" name="tabWidget">
       <property name="currentIndex">
-       <number>0</number>
+       <number>1</number>
       </property>
       <widget class="QWidget" name="wtabUpdates">
        <attribute name="title">
@@ -519,6 +519,13 @@ Playlist: Download a whole playlist.</string>
                 </property>
                 <property name="text">
                  <string>Prefix</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QCheckBox" name="iconvertToAlbum">
+                <property name="text">
+                 <string>Convert To Album</string>
                 </property>
                </widget>
               </item>
