@@ -427,7 +427,8 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             return True
 
         def download_mp4(self, output_path: Path, audio_stream: pytube.Stream) -> bool:
-            is_mp4 = output_path.suffix == "mp4"
+            is_mp4 = output_path.suffix == ".mp4"
+            print(output_path.suffix)
             # Download to extract audio
             if not is_mp4:
                 path = Path(output_path.parent, "cddl.mp4")
@@ -453,7 +454,7 @@ class CDDL_ui(designer_ui.Ui_MainWindow):
             return True
 
         def download_webm(self, output_path: Path, audio_stream: pytube.Stream, video_obj: pytube.YouTube) -> bool:
-            is_mp4 = output_path.suffix == "mp4"
+            is_mp4 = output_path.suffix == ".mp4"
             audio_path = Path(output_path.parent, "cddl_audio")
             self.download_stream(audio_path, audio_stream)
             if self.stop:
